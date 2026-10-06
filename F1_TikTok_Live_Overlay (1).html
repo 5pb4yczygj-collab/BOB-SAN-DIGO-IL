@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>F1 TikTok Live Racing Overlay</title>
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Rubik & Orbitron for racing feel -->
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Rubik:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Rubik', sans-serif;
+            background: transparent;
+            overflow: hidden;
+            margin: 0;
+            padding: 0;
+        }
+        .f1-font {
+            font-family: 'Orbitron', sans-serif;
+        }
+        /* Glowing neon track effect */
+        .neon-track {
+            filter: drop-shadow(0 0 15px rgba(239, 68, 68, 0.6));
+        }
+        /* Custom speech bubble animation */
+        @keyframes popUp {
+            0% { transform: scale(0) translateY(10px); opacity: 0; }
+            70% { transform: scale(1.05) translateY(-2px); opacity: 1; }
+            100% { transform: scale(1) translateY(0); opacity: 1; }
+        }
+        .speech-bubble {
+            animation: popUp 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+        }
+        /* Smooth car motion transitions */
+        .f1-car-element {
+            transition: left 0.1s linear, top 0.1s linear;
+        }
+    </style>
+</head>
+<body class="w-screen h-screen relative select-none">
+
+    <div class="absolute inset-0 z-0 pointer-events-none flex items-center justify-center opacity-85">
+        <svg class="w-full h-full max-w-6xl max-h-[85vh]" viewBox="0 0 1000 600" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <!-- Outer Glow Track Border -->
+            <path id="race-path" d="M150 300 C150 120, 350 80, 500 80 C650 80, 850 120, 850 300 C850 480, 650 520, 500 520 C350 520, 150 480, 150 300 Z" 
+                  stroke="#ef4444" stroke-width="48" stroke-linecap="round" stroke-linejoin="round" class="neon-track" opacity="0.25" />
+            <!-- Inner Asphalt Track -->
+            <path d="M150 300 C150 120, 350 80, 500 80 C650 80, 850 120, 850 300 C850 480, 650 520, 500 520 C350 520, 150 480, 150 300 Z" 
+                  stroke="#1e293b" stroke-width="38" stroke-linecap="round" stroke-linejoin="round" />
+            <!-- Center Dashed Line -->
+            <path d="M150 300 C150 120, 350 80, 500 80 C650 80, 850 120, 850 300 C850 480, 650 520, 500 520 C350 520, 150 480, 150 300 Z" 
+                  stroke="#38bdf8" stroke-width="2" stroke-dasharray="12 12" stroke-linecap="round" stroke-linejoin="round" opacity="0.7" />
+        </svg>
+    </div>
+
+    <div id="cars-container" class="absolute inset-0 z-10 pointer-events-none">
+        <!-- Dynamic F1 cars will be injected here -->
+    </div>
+
+    <div id="control-panel" class="absolute bottom-6 right-6 z-50 bg-slate-900/90 backdrop-blur-md border border-slate-700/80 p-4 rounded-2xl shadow-2xl text-white w-80 transition-all duration-300">
+        <div class="flex items-center justify-between mb-3 border-b border-slate-700 pb-2">
+            <div class="flex items-center gap-2">
+                <span class="w-3 h-3 rounded-full bg-red-500 animate-pulse"></span>
+                <h3 class="f1-font font-bold text-sm tracking-wide text-red-400">F1 LIVE OVERLAY</h3>
+            </div>
+            <button onclick="toggleControlPanel()" class="text-slate-400 hover:text-white text-xs bg-slate-800 px-2 py-1 rounded-lg">הסתר/הצג</button>
+        </div>
+
+        <div id="panel-content" class="space-y-3">
+            <p class="text-xs text-slate-300">הדמה הודעת צ'אט (כמו ששלומי כותב):</p>
+            <div class="flex gap-2">
+                <input type="text" id="sim-username" placeholder="שם משתמש (למשל: שלומי)" class="bg-slate-800 border border-slate-700 text-xs rounded-xl px-3 py-2 w-1/2 text-white focus:outline-none focus:border-red-500">
+                <input type="text" id="sim-message" placeholder="הודעה..." class="bg-slate-800 border border-slate-700 text-xs rounded-xl px-3 py-2 w-1/2 text-white focus:outline-none focus:border-red-500">
+            </div>
+            <button onclick="simulateChat()" class="w-full bg-gradient-to-r from-red-600 to-amber-600 hover:from-red-500 hover:to-amber-500 text-white text-xs font-bold py-2 rounded-xl shadow-lg transition-all transform active:scale-95">
+                שלח הודעה לבדיקה (Test)
+            </button>
+
+            <div class="pt-2 border-t border-slate-800 flex justify-between items-center text-[11px] text-slate-400">
+                <span>מצב: <span id="connection-status" class="text-emerald-400 font-semibold">פעיל (הדמיה)</span></span>
+                <button onclick="clearCars()" class="hover:text-red-400 underline">אפס מכוניות</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Track path definition points for mathematical circuit movement
+        const trackPath = {
+            cx: 500, cy: 300, rx: 350, ry: 220
+        };
+
+        // Storage for active chat drivers/cars
+        let activeCars = {};
+        const maxCars = 8;
+
+        // F1 Team color palettes & graphics
+        const carColors = [
+            { bg: '#ef4444', name: 'Ferrari Red', accent: '#f87171' },
+            { bg: '#3b82f6', name: 'Alpine Blue', accent: '#60a5fa' },
+            { bg: '#f59e0b', name: 'McLaren Papaya', accent: '#fbbf24' },
+            { bg: '#10b981', name: 'Aston Martin Green', accent: '#34d399' },
+            { bg: '#8b5cf6', name: 'Mercedes Silver', accent: '#a78bfa' },
+            { bg: '#ec4899', name: 'Pink Mercedes', accent: '#f472b6' }
+        ];
+
+        function getTeamColor(name) {
+            let hash = 0;
+            for (let i = 0; i < name.length; i++) {
+                hash = name.charCodeAt(i) + ((hash << 5) - hash);
+            }
+            return carColors[Math.abs(hash) % carColors.length];
+        }
+
+        // Add or update a car for a user when they write in chat
+        function handleUserMessage(username, message) {
+            if (!username) return;
+            username = username.trim();
+            message = message ? message.trim() : 'הצטרף למרוץ! 🏎️';
+
+            let car = activeCars[username];
+            if (!car) {
+                // If max cars exceeded, remove the oldest one
+                const usernames = Object.keys(activeCars);
+                if (usernames.length >= maxCars) {
+                    removeCar(usernames[0]);
+                }
+
+                // Create new car element
+                const colorTheme = getTeamColor(username);
+                const angle = Math.random() * Math.PI * 2;
+                
+                const container = document.getElementById('cars-container');
+                const carEl = document.createElement('div');
+                carEl.className = 'absolute f1-car-element pointer-events-auto flex items-center';
+                carEl.style.transform = 'translate(-50%, -50%)';
+                
+                carEl.innerHTML = `
+                    <div class="relative flex flex-col items-center">
+                        <!-- Speech Bubble -->
+                        <div id="bubble-${username}" class="speech-bubble mb-2 bg-slate-900/95 border-2 border-red-500 text-white px-3 py-1.5 rounded-2xl text-xs font-medium max-w-[180px] text-center truncate shadow-xl">
+                            <span class="text-red-400 font-bold block text-[10px]">${username}</span>
+                            <span class="chat-text">${message}</span>
+                        </div>
+                        <!-- F1 Car Graphic -->
+                        <div class="flex items-center drop-shadow-[0_5px_10px_rgba(0,0,0,0.5)]">
+                            <div class="w-12 h-6 rounded-md flex items-center justify-center font-black text-[10px] f1-font text-white shadow-md" style="background-color: ${colorTheme.bg}; border: 1px solid ${colorTheme.accent};">
+                                F1
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                container.appendChild(carEl);
+
+                car = {
+                    element: carEl,
+                    bubble: carEl.querySelector(`#bubble-${username}`),
+                    angle: angle,
+                    speed: 0.003 + (Math.random() * 0.002),
+                    lastActive: Date.now()
+                };
+                activeCars[username] = car;
+            } else {
+                // Update speech bubble text and refresh timer
+                car.bubble.querySelector('.chat-text').innerText = message;
+                car.bubble.style.display = 'block';
+                // Re-trigger animation
+                car.bubble.style.animation = 'none';
+                car.bubble.offsetHeight; /* trigger reflow */
+                car.bubble.style.animation = 'popUp 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards';
+                car.lastActive = Date.now();
+            }
+
+            // Auto-hide bubble after 8 seconds of silence
+            clearTimeout(car.timeout);
+            car.timeout = setTimeout(() => {
+                if (car.bubble) {
+                    car.bubble.style.display = 'none';
+                }
+            }, 8000);
+        }
+
+        function removeCar(username) {
+            if (activeCars[username]) {
+                activeCars[username].element.remove();
+                delete activeCars[username];
+            }
+        }
+
+        function clearCars() {
+            for (let username in activeCars) {
+                activeCars[username].element.remove();
+            }
+            activeCars = {};
+        }
+
+        // Animation Loop for Driving Cars around the Oval Track
+        function animateCars() {
+            const centerX = window.innerWidth / 2;
+            const centerY = window.innerHeight / 2;
+            // Scale track dimensions based on window size
+            const rx = Math.min(centerX * 0.75, 420);
+            const ry = Math.min(centerY * 0.65, 240);
+
+            for (let username in activeCars) {
+                let car = activeCars[username];
+                car.angle += car.speed;
+
+                // Elliptical path equations
+                const x = centerX + rx * Math.cos(car.angle);
+                const y = centerY + ry * Math.sin(car.angle);
+
+                // Calculate heading angle for car rotation/orientation
+                const vx = -rx * car.sin_cache * car.speed;
+                // Simple positioning
+                car.element.style.left = `${x}px`;
+                car.element.style.top = `${y}px`;
+            }
+
+            requestAnimationFrame(animateCars);
+        }
+
+        // Test simulation button trigger
+        function simulateChat() {
+            const userInp = document.getElementById('sim-username');
+            const msgInp = document.getElementById('sim-message');
+            
+            const username = userInp.value.trim() || 'שלומי';
+            const message = msgInp.value.trim() || 'יאללה מכוניות פורמולה בלייב! 🏎️️🔥';
+
+            handleUserMessage(username, message);
+            msgInp.value = '';
+        }
+
+        function toggleControlPanel() {
+            const content = document.getElementById('panel-content');
+            content.classList.toggle('hidden');
+        }
+
+        // Initialize default demo cars on load to look amazing immediately
+        window.onload = () => {
+            handleUserMessage('שלומי', 'איזה לייב אששש! 🏎️');
+            setTimeout(() => handleUserMessage('אבי', 'מי לוקח את המירוץ היום?'), 1000);
+            setTimeout(() => handleUserMessage('שרה', 'תותח על! 🏆'), 2000);
+
+            requestAnimationFrame(animateCars);
+
+            // Optional: Connect to TikFinity Websocket if integrated URL query contains cid
+            const urlParams = new URLSearchParams(window.location.search);
+            const cid = urlParams.get('cid');
+            if (cid) {
+                document.getElementById('connection-status').innerText = 'מחובר ל-TikFinity (WebSocket)';
+                // Real TikFinity WebSocket connector integration point can be hooked here if needed.
+            }
+        };
+    </script>
+</body>
+</html>
